@@ -14,6 +14,7 @@ BACKUP_DIR=/data/nemesis/backup/wireless.projection
 LOG=/data/nemesis/wireless.projection.log
 
 WIFI_XML=android.hardware.wifi.xml
+WIFID_XML=android.hardware.wifi.direct.xml
 AA_XML=com.hkmc.software.connectivity.androidauto_wireless.xml
 CP_XML=com.hkmc.software.connectivity.carplay_wireless.xml
 
@@ -449,9 +450,14 @@ rewrite_wpa() {
     return 0
 }
 
+# The live supplicant runs with -c /data/misc/wifi/wpa_supplicant.conf (owned by
+# the wifi service, not reachable by package hooks) and includes this overlay via
+# -I, whose settings override the main config. The factory main config keeps
+# p2p_disabled=1, so the overlay is the only reliable place to force P2P on.
 rewrite_overlay() {
     local _tmp="$BACKUP_DIR/rewrite.tmp"
     local _line
+    local _seen=0
     if [ ! -f "$OVERLAY" ]; then
         log "SKIP missing $OVERLAY"
         return 0
@@ -460,13 +466,20 @@ rewrite_overlay() {
     while IFS= read -r _line || [ -n "$_line" ]; do
         case "$_line" in
             p2p_no_go_freq=*) ;;
+            p2p_disabled=*)
+                putline "p2p_disabled=0" >> "$_tmp" || return 1
+                _seen=1
+                ;;
             *)
                 putline "$_line" >> "$_tmp" || return 1
                 ;;
         esac
     done < "$OVERLAY"
+    if [ "$_seen" -eq 0 ]; then
+        putline "p2p_disabled=0" >> "$_tmp" || return 1
+    fi
     commit_tmp "$OVERLAY" "$_tmp" || return 1
-    log "patched $OVERLAY (removed p2p_no_go_freq)"
+    log "patched $OVERLAY (removed p2p_no_go_freq, forced p2p_disabled=0)"
     return 0
 }
 
@@ -524,6 +537,7 @@ snapshot_all() {
     snap_file "$WPA" "$BACKUP_DIR/wpa_supplicant.conf" "$BACKUP_DIR/wpa_supplicant.conf.absent" || return 1
     snap_file "$OVERLAY" "$BACKUP_DIR/wpa_supplicant_overlay.conf" "$BACKUP_DIR/wpa_supplicant_overlay.conf.absent" || return 1
     snap_file "$PERM/$WIFI_XML" "$BACKUP_DIR/perm.$WIFI_XML" "$BACKUP_DIR/perm.$WIFI_XML.absent" || return 1
+    snap_file "$PERM/$WIFID_XML" "$BACKUP_DIR/perm.$WIFID_XML" "$BACKUP_DIR/perm.$WIFID_XML.absent" || return 1
     snap_file "$PERM/$AA_XML" "$BACKUP_DIR/perm.$AA_XML" "$BACKUP_DIR/perm.$AA_XML.absent" || return 1
     snap_file "$PERM/$CP_XML" "$BACKUP_DIR/perm.$CP_XML" "$BACKUP_DIR/perm.$CP_XML.absent" || return 1
     putline 1 > "$BACKUP_DIR/saved" || return 1
@@ -550,6 +564,7 @@ apply_all() {
         log "SKIP $OVERLAY"
     fi
     apply_perm "$WIFI_XML" || return 1
+    apply_perm "$WIFID_XML" || return 1
     apply_perm "$AA_XML" || return 1
     apply_perm "$CP_XML" || return 1
     setprop persist.ium.support carplay 2>/dev/null || log "WARN: setprop persist.ium.support failed"
@@ -579,6 +594,7 @@ restore_all() {
     restore_edited_file "$WPA" "$BACKUP_DIR/wpa_supplicant.conf" "$BACKUP_DIR/wpa_supplicant.conf.absent" || _rc=1
     restore_edited_file "$OVERLAY" "$BACKUP_DIR/wpa_supplicant_overlay.conf" "$BACKUP_DIR/wpa_supplicant_overlay.conf.absent" || _rc=1
     restore_owned_file "$PERM/$WIFI_XML" "$BACKUP_DIR/perm.$WIFI_XML" "$BACKUP_DIR/perm.$WIFI_XML.absent" || _rc=1
+    restore_owned_file "$PERM/$WIFID_XML" "$BACKUP_DIR/perm.$WIFID_XML" "$BACKUP_DIR/perm.$WIFID_XML.absent" || _rc=1
     restore_owned_file "$PERM/$AA_XML" "$BACKUP_DIR/perm.$AA_XML" "$BACKUP_DIR/perm.$AA_XML.absent" || _rc=1
     restore_owned_file "$PERM/$CP_XML" "$BACKUP_DIR/perm.$CP_XML" "$BACKUP_DIR/perm.$CP_XML.absent" || _rc=1
     restore_getprop persist.ium.support "$BACKUP_DIR/gp.persist.ium.support" || _rc=1

@@ -36,8 +36,15 @@ if [ "${NEMESIS_HOOK_NS:-}" != 1 ]; then
         mkdir -p "$r/usr/bin" "$r/usr/lib64" "$r/usr/lib/x86_64-linux-gnu" "$r$pylib" \
             "$r/dev" "$r/system" "$r/data" "$r/tmp" "$r$NEMESIS_ROOT" "$r/etc"
         mount --bind /usr/bin "$r/usr/bin"
-        mount --bind /usr/lib64 "$r/usr/lib64"
-        mount --bind /usr/lib/x86_64-linux-gnu "$r/usr/lib/x86_64-linux-gnu"
+        if [ -d /usr/lib64 ]; then
+            mount --bind /usr/lib64 "$r/usr/lib64"
+        fi
+        if [ -d /usr/lib/x86_64-linux-gnu ]; then
+            mount --bind /usr/lib/x86_64-linux-gnu "$r/usr/lib/x86_64-linux-gnu"
+        elif [ -d /usr/lib ]; then
+            # Merged-/usr/lib distros (Arch, Fedora) keep the runtime libs here.
+            mount --bind /usr/lib "$r/usr/lib"
+        fi
         mount --bind "$pylib" "$r$pylib"
         mount --bind "$NEMESIS_ROOT" "$r$NEMESIS_ROOT"
         for n in null zero urandom random tty; do
@@ -126,6 +133,7 @@ if grep -E 'wpa_supplicant|build\.prop|featurexml|adb_hide|5170' "$STAGE/wireles
     fail "wireless package ships a stock config"
 fi
 grep -q 'android.hardware.wifi.xml' "$STAGE/wireless.list" || fail "wifi payload missing"
+grep -q 'android.hardware.wifi.direct.xml' "$STAGE/wireless.list" || fail "wifi-direct payload missing"
 grep -q 'androidauto_wireless.xml' "$STAGE/wireless.list" || fail "aa payload missing"
 grep -q 'carplay_wireless.xml' "$STAGE/wireless.list" || fail "cp payload missing"
 if grep -q 'HKMC_DiPO' "$STAGE/wireless.list" || grep -q 'Iap2ServerApp' "$STAGE/wireless.list"; then
@@ -326,6 +334,13 @@ assert_applied() {
         /data/nemesis/backup/wireless.projection/featurexml.list
     assert_cmp /system/etc/permissions/android.hardware.wifi.xml \
         "$WIFI_PKG/files/permissions/android.hardware.wifi.xml"
+    assert_cmp /system/etc/permissions/android.hardware.wifi.direct.xml \
+        "$WIFI_PKG/files/permissions/android.hardware.wifi.direct.xml"
+    [ -f /data/nemesis/backup/wireless.projection/perm.android.hardware.wifi.direct.xml.absent ] \
+        || fail "wifi-direct absent marker missing"
+    assert_grep '^p2p_disabled=0$' /system/etc/wifi/wpa_supplicant_overlay.conf
+    [ "$(grep -c 'p2p_disabled' /system/etc/wifi/wpa_supplicant_overlay.conf)" = 1 ] \
+        || fail "overlay p2p_disabled duplicated"
     assert_cmp /system/etc/permissions/com.hkmc.software.connectivity.carplay_wireless.xml \
         "$WIFI_PKG/files/permissions/com.hkmc.software.connectivity.carplay_wireless.xml"
     assert_cmp /data/nemesis/backup/wireless.projection/perm.android.hardware.wifi.xml \
@@ -361,6 +376,8 @@ assert_restored() {
     assert_cmp /system/etc/wifi/wpa_supplicant.conf "$FAKE/orig/$tag/wpa"
     assert_cmp /system/etc/wifi/wpa_supplicant_overlay.conf "$FAKE/orig/$tag/overlay"
     assert_cmp /system/etc/permissions/android.hardware.wifi.xml "$FAKE/orig/$tag/wifi.xml"
+    assert_gone /system/etc/permissions/android.hardware.wifi.direct.xml
+    assert_not_grep 'p2p_disabled' /system/etc/wifi/wpa_supplicant_overlay.conf
     assert_cmp /system/etc/permissions/com.hkmc.software.connectivity.androidauto_wireless.xml \
         "$FAKE/orig/$tag/aa.xml"
     assert_gone /system/etc/permissions/com.hkmc.software.connectivity.carplay_wireless.xml
@@ -514,6 +531,24 @@ grep -q $'^keep_this=1\r$' /system/onebin/crlf_us/featurexml.cfg \
 uninstall_wireless
 assert_cmp /system/onebin/crlf_us/featurexml.cfg "$FAKE/orig/E/featurexml.crlf.cfg"
 echo "scenario E ok"
+
+# I: wifi.direct XML already present on the unit (newer firmware). Snapshot and
+# restore its live bytes; install overwrites with the package payload.
+seed_unit freq no none 0 I
+printf '%s\n' 'UNIQUE-LIVE-WIFID-9f3a' > /system/etc/permissions/android.hardware.wifi.direct.xml
+cp -a /system/etc/permissions/android.hardware.wifi.direct.xml "$FAKE/orig/I/wifid.xml"
+ln -sfn "$FAKE/orig/I" "$FAKE/orig/current"
+run_hook "$WIFI_PKG" pre.sh
+run_hook "$WIFI_PKG" post.sh
+assert_cmp /system/etc/permissions/android.hardware.wifi.direct.xml \
+    "$WIFI_PKG/files/permissions/android.hardware.wifi.direct.xml"
+assert_cmp /data/nemesis/backup/wireless.projection/perm.android.hardware.wifi.direct.xml \
+    "$FAKE/orig/I/wifid.xml"
+assert_grep 'UNIQUE-LIVE-WIFID-9f3a' \
+    /data/nemesis/backup/wireless.projection/perm.android.hardware.wifi.direct.xml
+uninstall_wireless
+assert_cmp /system/etc/permissions/android.hardware.wifi.direct.xml "$FAKE/orig/I/wifid.xml"
+echo "scenario I ok"
 
 # adb.toggle: enable/disable on demand through adbctl.sh (no reboot, no install-time change).
 toggle_ctl() {
