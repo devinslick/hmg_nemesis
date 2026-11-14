@@ -10,4 +10,10 @@ fi
 remove_backup_dir || exit 1
 log "removed $BACKUP_DIR"
 sync
-exit 0
+# Mirror postinstall: the restored stock APKs need a dexopt reboot, and the
+# cleared projection apps reinitialize cleanly at boot. Without this the
+# force-stopped apps cold-restart mid-session against wiped dalvik caches.
+log "rebooting so Dalvik dexopts the restored stock APKs"
+exec /system/bin/reboot
+log "FAIL: reboot returned"
+exit 1

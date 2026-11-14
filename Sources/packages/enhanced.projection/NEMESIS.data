@@ -3,7 +3,7 @@ version=1.1
 id=enhanced.projection
 name=Enhanced Phone Projection
 type=application
-package-version=1.23
+package-version=1.24
 short-desc="Wireless CarPlay, improved Android Auto, Turn-by-Turn guidance."
 detailed-desc="Enhanced Phone Projection:
 - Wireless CarPlay

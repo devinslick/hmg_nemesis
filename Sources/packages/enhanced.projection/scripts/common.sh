@@ -650,6 +650,13 @@ restore_all() {
         log "FAIL: restore incomplete, snapshot kept at $BACKUP_DIR"
         return 1
     fi
+    # The patched apps ran with the iap2 props and wrote projection/device
+    # state that the restored stock code cannot read back: the projection
+    # sink then exits silently at session init (service 'gpm' dies, no crash)
+    # and wired/wireless projection stays dead until the app data is cleared.
+    # Clearing these two is pairing-safe (pairings live in the BT app's data).
+    pm clear com.google.android.projection.sink 2>/dev/null || log "WARN: pm clear sink failed"
+    pm clear com.daudio.app.phoneprojection 2>/dev/null || log "WARN: pm clear phoneprojection failed"
     sync
     sys_ro
     log "restore complete"
