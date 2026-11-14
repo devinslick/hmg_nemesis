@@ -13,6 +13,7 @@ sync
 # Mirror postinstall: the restored stock APKs need a dexopt reboot, and the
 # cleared projection apps reinitialize cleanly at boot. Without this the
 # force-stopped apps cold-restart mid-session against wiped dalvik caches.
+sync
 log "rebooting so Dalvik dexopts the restored stock APKs"
 exec /system/bin/reboot
 log "FAIL: reboot returned"

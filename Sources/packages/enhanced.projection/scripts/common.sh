@@ -659,6 +659,15 @@ restore_all() {
     pm clear com.daudio.app.phoneprojection 2>/dev/null || log "WARN: pm clear phoneprojection failed"
     sync
     sys_ro
+    # Never reboot with /system left rw: a hard reboot of a rw-mounted system
+    # can leave the next boot refusing ALL remounts (EPERM from mount(2) in
+    # every root context; only a full cold power cycle recovers). Verify.
+    if grep -q " /system rw" /proc/mounts 2>/dev/null; then
+        log "WARN: /system still rw after sys_ro - forcing extra sync"
+        sync
+        sleep 2
+        sync
+    fi
     log "restore complete"
     return 0
 }
